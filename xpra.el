@@ -57,7 +57,7 @@ If nil, use self-signed certs.")
   (interactive "p")
   (with-current-buffer (get-buffer-create (format xpra-buffer-name "new"))
     (while-let ((proc (get-buffer-process (current-buffer))))
-      (kill-process proc))
+      (delete-process proc))
     (comint-mode)
     (erase-buffer)
     (insert "xpra server logs:\n")
@@ -66,62 +66,33 @@ If nil, use self-signed certs.")
       (set-file-modes dir #o700)
       (setq default-directory dir))
     (let* ((fqdn (string-trim (shell-command-to-string "hostname --fqdn")))
-	   (process-environment
-	    (append '("XPRA_EXPORT_MENU_DATA=false"
-		      ;; Suppress the `server-create-dumb-terminal-frame' (buggy) behavior.
-		      "TERM=notdumb")
-		    process-environment))
-	   (processing-from (point))
-	   (password (xpra--make-password))
-	   ssl-key ssl-cert
-	   proc
-	   port)
-      (if (or xpra-ssl-key xpra-ssl-cert)
-	  (setq ssl-key xpra-ssl-key ssl-cert xpra-ssl-cert)
-	(setq ssl-key (expand-file-name "key.pem") ssl-cert (expand-file-name "cert.pem"))
-	(unless (file-exists-p ssl-key)
-	  (message "Generating self-signed certs.")
-	  (shell-command
-	   (concat
-	    "openssl req -x509 -newkey rsa:4096 -keyout " ssl-key " -out " ssl-cert " -sha256 -days 3650 -nodes -subj /C=US/CN=" fqdn))))
-      (cl-assert (file-exists-p ssl-key))
-      (cl-assert (file-exists-p ssl-cert))
-      (setq proc (make-process
-		  :name "xpra"
-		  :buffer (current-buffer)
-		  :command
-		  `(,xpra-exe
-		    "start"
-		    ,@xpra-additional-args
-		    "--daemon=no"
-		    ,(format "--bind-wss=0:0,auth=password,value=%s" password)
-		    ,(format "--server-idle-timeout=%s" xpra-idle-timeout)
-		    ,(format "--ssl-key=%s" ssl-key)
-		    ,(format "--ssl-cert=%s" ssl-cert)
-		    ,(format "--socket-dirs=%s" default-directory)
-		    "--exit-with-children" "--terminate-children=yes"
-		    "--start-child=emacsclient --frame-parameters='((fullscreen . fullboth))' --create-frame"
-		    "--html=/home/sbaugh/src/xpra-html5/html5")
-		  :connection-type 'pipe
-		  :noquery t))
-      (while (and (null port) (accept-process-output proc))
-	(unless (process-live-p proc)
-	  (error "Xpra aborted"))
-	(goto-char processing-from)
-	(when (re-search-forward (rx "allocated " (+ nonl) " port " (group (+ digit)) " on ") nil 'noerror)
-	  (setq port (string-to-number (match-string 1))))
-	(setq processing-from (point)))
-      (let ((name (format xpra-buffer-name port)))
-	;; Ports can be reused.
-	(when (get-buffer name)
-	  (kill-buffer name))
-	(rename-buffer name))
-      (let (;; offscreen=no because of https://github.com/Xpra-org/xpra-html5/issues/329
-	    (s (format "https://%s:%s/?emacs&password=%s&floating_menu=no&offscreen=no" fqdn port password)))
-	(when interactive
-	  (message "Frame on %s" s)
-	  (kill-new s))
-	s))))
+	   (sockname (format "emacs-x%s" (xpra--make-password)))
+	   (url (format "https://%s:10443/%s" fqdn sockname)))
+      (let ((process-environment
+	     (append '("XPRA_EXPORT_MENU_DATA=false"
+		       ;; Suppress the `server-create-dumb-terminal-frame' (buggy) behavior.
+		       "TERM=notdumb")
+		     process-environment)))
+	(make-process
+	 :name "xpra"
+	 :buffer (current-buffer)
+	 :command
+	 `(,xpra-exe
+	   "start"
+	   ,@xpra-additional-args
+	   "--daemon=no"
+	   ,(format "--bind=%s" (expand-file-name sockname))
+	   ,(format "--server-idle-timeout=%s" xpra-idle-timeout)
+	   "--exit-with-children" "--terminate-children=yes"
+	   "--start-child=emacsclient --frame-parameters='((fullscreen . fullboth))' --create-frame"
+	   "--html=/home/sbaugh/src/xpra-html5/html5")
+	 :connection-type 'pipe
+	 :noquery t))
+      (when interactive
+	;; TODO we should print this message *after* receiving the frame connection...
+	(message "Frame on %s" url)
+	(kill-new url))
+      url)))
 
 (provide 'xpra)
 ;;; xpra.el ends here
