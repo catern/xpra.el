@@ -25,14 +25,14 @@
 
 Set to 0 to disable.")
 
-(defvar xpra-buffer-name "*xpra server %s*"
-  "Name for xpra buffers, with %s substituted for port number.")
+(defvar xpra-buffer-name "*xpra*"
+  "Name for xpra buffers.")
 
 (defcustom xpra-nginx-exe "nginx"
   "The nginx executable.")
 
-(defvar xpra-nginx-buffer-name "*xpra nginx*"
-  "Name for the xpra nginx buffer.")
+(defvar-local xpra--nginx-process nil)
+(defvar-local xpra--fqdn nil)
 
 (defvar xpra-ssl-key nil
   "Filename of SSL key to use with xpra.
@@ -65,22 +65,26 @@ If nil, use self-signed certs.")
     (set-file-modes dir #o700)
     (setq default-directory dir)))
 
+(defun xpra--buffer ()
+  (with-current-buffer (get-buffer-create xpra-buffer-name)
+    (unless (derived-mode-p 'comint-mode)
+      (comint-mode)
+      (xpra--cd-to-dir)
+      (setq xpra--fqdn (string-trim (shell-command-to-string "hostname --fqdn"))))
+    (current-buffer)))
+
 (defun xpra--nginx-start ()
   (interactive)
-  (with-current-buffer (get-buffer-create xpra-nginx-buffer-name)
-    (while-let ((proc (get-buffer-process (current-buffer))))
-      (kill-process proc)
-      (while (accept-process-output proc))
-      (sit-for 0.2)
-      (delete-process proc))
-    (comint-mode)
-    (erase-buffer)
-    (insert "xpra nginx server logs:\n")
+  (with-current-buffer (xpra--buffer)
+    (when (and xpra--nginx-process (process-live-p xpra--nginx-process))
+      (kill-process xpra--nginx-process)
+      (while (accept-process-output xpra--nginx-process))
+      ;; wait out TCP time-wait, I guess
+      (sit-for 0.2))
     ;; nginx must be in the xpra dir so that it can open the sockets.
-    (xpra--cd-to-dir)
-    (let ((keyname "key.pem")
+    (let (;; These names are hardcoded in the nginx configuration.
+	  (keyname "key.pem")
 	  (certname "cert.pem"))
-      ;; These names are hardcoded in the nginx configuration.
       (if (or xpra-ssl-key xpra-ssl-cert)
 	  (progn
 	    (make-symbolic-link xpra-ssl-key keyname t)
@@ -89,34 +93,28 @@ If nil, use self-signed certs.")
 	  (message "Generating self-signed certs.")
 	  (shell-command
 	   (concat
-	    "openssl req -x509 -newkey rsa:4096 -keyout " keyname " -out " certname " -sha256 -days 3650 -nodes -subj /C=US/CN=" fqdn))))
+	    "openssl req -x509 -newkey rsa:4096 -keyout " keyname " -out " certname " -sha256 -days 3650 -nodes -subj /C=US/CN=" xpra--fqdn))))
       (cl-assert (file-exists-p keyname))
       (cl-assert (file-exists-p certname)))
     (make-symbolic-link "/home/sbaugh/src/xpra-html5/html5" "html" t)
     (make-symbolic-link "/home/sbaugh/src/xpra.el/nginx.conf" "nginx.conf" t)
-    (make-process
-     :name "xpra-nginx"
-     :buffer (current-buffer)
-     :command
-     `(,xpra-nginx-exe
-       "-e" "/dev/stderr"
-       "-p" "."
-       "-c" "nginx.conf")
-     :connection-type 'pipe
-     :noquery t)))
+    (setq xpra--nginx-process
+	  (make-process
+	   :name "xpra-nginx"
+	   :buffer (current-buffer)
+	   :command
+	   `(,xpra-nginx-exe
+	     "-e" "/dev/stderr"
+	     "-p" "."
+	     "-c" "nginx.conf")
+	   :connection-type 'pipe
+	   :noquery t))))
 
 (defun xpra-start (&optional interactive)
   (interactive "p")
-  (with-current-buffer (get-buffer-create (format xpra-buffer-name "new"))
-    (while-let ((proc (get-buffer-process (current-buffer))))
-      (delete-process proc))
-    (comint-mode)
-    (erase-buffer)
-    (insert "xpra server logs:\n")
-    (xpra--cd-to-dir)
-    (let* ((fqdn (string-trim (shell-command-to-string "hostname --fqdn")))
-	   (sockname (format "emacs-x%s" (xpra--make-password)))
-	   (url (format "https://%s:10443/%s" fqdn sockname)))
+  (with-current-buffer (xpra--buffer)
+    (let* ((sockname (format "emacs-x%s" (xpra--make-password)))
+	   (url (format "https://%s:10443/%s" xpra--fqdn sockname)))
       (let ((process-environment
 	     (append '("XPRA_EXPORT_MENU_DATA=false"
 		       ;; Suppress the `server-create-dumb-terminal-frame' (buggy) behavior.
