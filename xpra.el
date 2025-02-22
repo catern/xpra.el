@@ -76,7 +76,7 @@ If nil, use self-signed certs.")
 (defun xpra--nginx-start ()
   (interactive)
   (with-current-buffer (xpra--buffer)
-    (when (and xpra--nginx-process (process-live-p xpra--nginx-process))
+    (when (process-live-p xpra--nginx-process)
       (kill-process xpra--nginx-process)
       (while (accept-process-output xpra--nginx-process))
       ;; wait out TCP time-wait, I guess
@@ -98,6 +98,7 @@ If nil, use self-signed certs.")
       (cl-assert (file-exists-p certname)))
     (make-symbolic-link "/home/sbaugh/src/xpra-html5/html5" "html" t)
     (make-symbolic-link "/home/sbaugh/src/xpra.el/nginx.conf" "nginx.conf" t)
+    (make-symbolic-link "/home/sbaugh/src/xpra.el/default-settings.txt" "default-settings.txt" t)
     (setq xpra--nginx-process
 	  (make-process
 	   :name "xpra-nginx"
@@ -113,6 +114,8 @@ If nil, use self-signed certs.")
 (defun xpra-start (&optional interactive)
   (interactive "p")
   (with-current-buffer (xpra--buffer)
+    (unless (process-live-p xpra--nginx-process)
+      (xpra--nginx-start))
     (let* ((sockname (format "emacs-x%s" (xpra--make-password)))
 	   (url (format "https://%s:10443/%s" xpra--fqdn sockname)))
       (let ((process-environment
@@ -140,6 +143,14 @@ If nil, use self-signed certs.")
 	(message "Frame on %s" url)
 	(kill-new url))
       url)))
+
+(defun xpra-shutdown ()
+  (interactive)
+  (with-current-buffer (xpra--buffer)
+    (while-let ((proc (get-buffer-process (current-buffer))))
+      (delete-process proc))
+    (erase-buffer)
+    (kill-buffer)))
 
 (provide 'xpra)
 ;;; xpra.el ends here
