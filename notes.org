@@ -1,0 +1,522 @@
+--forward-xdg-open=on|off|auto
+       Intercept execution of xdg-open and forward the request  to  the
+       client.
+
+that's real interesting.
+
+that suggests... some cool stuff.
+* design
+so:
+- each connection opens a new emacsclient frame
+  (necessary for multi-monitor)
+
+but then how do we handle the lifecycle of emacs?
+do we:
+- autostart it on connection, like emacsclient -a -c?
+- start it on boot and fail if there's no emacs running?
+- just fail if there's no emacs running?
+
+that third one is interesting actually.
+
+then the user would be forced to maintain their own emacs lifecycle...
+
+eh let's just autostart on connection, it's fine and by far the most convenient.
+
+maybe we'll run it in a way where it exits if you have no frames left...
+no that's tedious, emacs shouldn't exit if your connection drops.
+
+how does it work in xpra?
+do we have each frame in a separate x server and xpra server?
+
+or are they in the same x server, just only one displayed per tab?
+
+oh hm maybe we could just all connect to the same x server,
+and you just switch frames with C-x 5 o,
+or make new frames with C-x 5 2,
+etc.
+
+omg lmao we could use exwm...
+
+hm.
+
+if I really go fully into xpra,
+then we can have the same set of frames in the browser and on the desktop.
+
+that would be cool.
+
+so if xpra just starts up Emacs,
+and you can use it on your desktop too (or via ssh I guess lol),
+then that's pretty nice.
+
+and I guess closing Emacs would just close Emacs.
+
+and then... I guess we just have xpra autorestart or something?
+
+oh but how do you invoke emacs with --debug-init!!!
+
+that sounds annoying!!
+
+lmao what if...
+
+oh I guess you could just spin up a second Emacs server or something...
+
+oh!
+we could have a prompt or something to decide which command to run?
+* system-wide proxy server
+so...
+
+perhaps I install and enable this
+(and then security will be less vexed)
+* default-settings.txt
+
+so I could set some things like "start" and "floating_menu=no" and "exit_with_children",
+and thereby get an emacsclient per connection, kinda thing.
+* emacs-centric
+okay so what if this was started and managed by emacs, as an emacs package?
+
+yes. perfect. a thing which just lets you connect to open a frame.
+
+authentication is a bit tricky, but whatever.
+
+so we just need to get rid of the header bars
+
+aha! they're called window decorations internally,
+and they go away when the window is fullscreened.
+
+perfect!
+** configure args
+between
+./configure -C --with-x-toolkit=no --without-cairo --without-xaw3d --without-gsettings --without-harfbuzz
+
+and
+
+./configure -C --with-x-toolkit=no --without-cairo --without-xaw3d --without-gsettings --without-harfbuzz --without-xft --without-lcms2 --without-xdbe
+
+we started to work properly, ish
+
+so that's good!
+
+./configure -C --with-x-toolkit=no --without-cairo --without-xaw3d --without-gsettings --without-xdbe
+
+also works fine
+
+./configure -C --with-x-toolkit=no --without-cairo --without-gsettings --without-xdbe
+
+also works fine
+
+./configure -C --with-x-toolkit=no --without-cairo --without-gsettings
+
+does not work!!!
+
+./configure -C --with-x-toolkit=lucid --without-xdbe
+
+works nicely...
+
+damn. okay.
+
+so it's double buffering that is the problem... curious......
+
+https://news.ycombinator.com/item?id=12831115
+
+(modify-frame-parameters nil '((inhibit-double-buffering . t)))
+https://lists.gnu.org/archive/html/bug-gnu-emacs/2022-11/msg01156.html
+
+lol so xpra sucks
+
+but! this is still achievable, we now know.
+* gathered facts
+- make it fullscreen
+- set floating_menu=no in default-settings.txt
+- set things like "start" and "exit_with_children" in default-settings.txt
+- (modify-frame-parameters nil '((inhibit-double-buffering . t)))
+  use \' to input the ', so 'asdfasd'\''asefasef'
+
+okay so then how do we connect and get a new session?
+
+hm. do we need a proxy server perhaps...
+
+yeah probably?
+
+so then we need to just make it so that...
+every time you open one of these pages,
+it starts a new xpra session and runs a command and exit with the client and children.
+
+http://127.0.0.1:10000/?action=start&start=xterm&exit_with_client=yes&exit_with_children=yes
+
+this makes the session and makes it exit when disconnecting, but doesn't actually connect
+
+I may need to just make my own proxy server...
+
+which may be easy enough, actually.
+if I just use the Emacs webserver and redirect to a different port, rather than proxy...
+
+that's pretty easy!
+
+aha yes, --exit-with-client behaves correctly, it waits for the first client then exits.
+
+right so we just need to write a tiny webserver which accepts a connection,
+starts up an xpra server,
+then redirects to that.
+
+no proxying necessary.
+
+ah and this will also allow...
+
+- the url itself has the password, probably, cool
+  which is securely communicated, nice, without necessarily using ssl
+- the url can be copied to let someone else access the connection!
+  cool!
+  
+we'll still use ssl though lol
+* DONE resizing
+okay yes when fullscreen we resize correctly
+
+http://127.0.0.1:10000/?floating_menu=no
+* resolution/dpi/whatever
+hm!!
+
+why is this...
+not working right!!
+
+http://127.0.0.1:10000/?floating_menu=no&override_width=2000
+
+this works fine, but... why do I need this...
+
+I guess it's a matter of the DPI?
+
+no it's not
+
+Chromium is reporting a weird screen size.
+
+254x135 is 10 by 5.314, which the DPI is correct for.
+
+
+document.getElementById('screen').clientHeight
+509
+
+HMm!!
+
+weird.
+
+oh claude is saying it might be css scaling
+uhh lol idk
+
+ohhhhhhhh no I just was zoomed in lol
+* design
+just have a command in Emacs which generates a URL
+
+the URL will be for some public HTTPS client,
+which will be given the password and destination to connect to.
+
+I guess?
+
+https://xpra.org/html5/connect.html
+
+let's see!
+
+and ah let's just prompt in Emacs to allow the connection.
+
+(defun frameshare-prompt ()
+  (if (yes-or-no-p "Allow connection?")
+      nil
+    (error "Connection denied")))
+
+eh.
+EH.
+
+that's possible but not necessary.
+
+http://127.0.0.1:10000/?encryption=AES-CBC&key=realcoolbird?insecure=true&password=realcoolbird
+
+http://127.0.0.1:10000/?floating_menu=no&password=realcoolbird
+* elisp
+(setq frame-resize-pixelwise t)
+
+emacsclient --create-frame --frame-parameters='((inhibit-double-buffering . t) (fullscreen . fullboth))'
+
+
+hmm seems like we still get double-buffering for some reason...
+
+xpra doesn't seem happy...
+
+it definitely works if we start a new emacs and change its root params, hm...
+* emacs command side
+let's implement
+
+
+* shell command
+wellll no, let's perfect the shell command first
+** DONE figure out double buffering
+CLOSED: [2025-02-20 Thu 10:37]
+why can't I inhibit it per-frame
+
+seems quite important in fact.
+
+(add-to-list 'default-frame-alist '(inhibit-double-buffering . t))
+(modify-all-frames-parameters '((inhibit-double-buffering . t)))
+
+x_set_inhibit_double_buffering
+
+hmm
+
+OMG
+
+it works in emacs -q, what what
+annoying!!
+
+and it works in a freshly started instance of my emacs.  HM.
+
+
+hm.
+
+HM.
+
+curious
+
+why is my emacs fugged up?
+* DONE double buffering turned off on the xpra side
+CLOSED: [2025-02-20 Thu 10:35]
+aha! perfect!
+
+but, wait, is Emacs still trying to double-buffer for some reason? huh???
+
+(x-double-buffered-p) is useful
+
+I need to dig in more...
+
+something is causing this bad rendering behavior...
+oh and it might be actually a persistent problem with my own emacs,
+since I can't seem to get it to stop any way...
+
+
+whaaaaaaaaat
+
+if the buffer is already displayed elsewhere...
+
+we get repainting of the entire frame??? what???? why????
+
+okay so that points to... some kind of contamination...
+
+hmm...
+very curious.
+
+okay so the real issue is....
+
+it seems to repaint the entirety of the other frame when we touch a different frame?!?!?
+
+that's terrible!!
+
+fdfsdf
+
+this applies even when we disable double buffering... hm...
+
+it's specifically only buffer modifications, which is odd...
+minibuffer or echo area doesn't trigger it...
+
+okay this probably doesn't matter TOO much...
+
+but definitely a weird emacs bug...
+* issues now
+well it's annoying that I can't run it directly in my own shell buffer lol,
+but whatever.
+
+okay I got the command to have minimal errors:
+
+XPRA_EXPORT_MENU_DATA=false /nix/store/ng20vsrvai62dsy87b41filsqs6j69z4-xpra-6.2.2/bin/xpra start --printing=no --webcam=no --mdns=no --pulseaudio=no --splash=no --daemon=no --exit-with-client --exit-with-children --terminate-children=yes --start-child='/home/sbaugh/xpra-cmd' --socket-dir=/home/sbaugh/.emacs.d/xpra --bind-tcp=127.0.0.1:10000 --html=/home/sbaugh/src/xpra-html5/html5 --http-scripts=all --source=/dev/null :100 -d compress
+
+now... randomizing the port.
+
+so... hmm...
+
+I maybe don't need this because...
+
+I can access different displays over the same port, by connecting to specific ones.
+
+IF i have a proxy server, which I plausibly can.
+
+the proxy server doesn't let me avoid the need for, um...
+making a fresh xpra through a command each time.
+
+but...
+
+I can plausibly control it entirely through the proxy server, maybe?
+
+oh hm wait...
+
+will the proxy server let me skip authenticating, kinda thing?
+
+I could have a per-user proxy server, perhaps...
+
+
+--displayfd lets me get the display number which is nice...
+
+but I don't actually have an easy way to grab that from emacs lol...
+
+I can't... control the file descriptors... lol...
+
+okay let's stick to port numbers
+
+we'll just loop on accept process output,
+with a timeout,
+trying to read it from the log buffer.
+
+ezpz.
+
+then we can show a URL...
+
+(man should I just be using xrdp or something lol)
+** DONE elisp command
+done!!!
+sick
+* exposing to the network at large
+so...
+
+it's a bit tricky...
+
+if I run separate servers for each instance, then...
+
+proxying with an ssl-enabled thing is tricky.
+
+BUT, we can just have xpra provide its own ssl,
+both in production (at JS) and locally on my box (with self-signed certs)
+
+so let's just make some self-signed certs, ezpz.
+
+openssl req -x509 -newkey rsa:4096 -keyout ~/.emacs.d/xpra-key.pem -out ~/.emacs.d/xpra-cert.pem -sha256 -days 3650 -nodes -subj "/C=US/CN=earth.catern.com"
+** DONE using bind-wss
+CLOSED: [2025-02-20 Thu 16:09]
+okay...
+
+now I seem to not be getting anything visible on-screen, even with xterm
+
+is this because we now have offscreen canvas available, and xpra is broken?
+
+https://github.com/Xpra-org/xpra-html5/issues/329
+this issue
+cool fine
+** DONE add a password
+CLOSED: [2025-02-20 Thu 16:38]
+awww yeah
+
+* DONE maybe avoid being single-use only?
+CLOSED: [2025-02-20 Thu 16:39]
+this is kinda annoying.
+
+oh I can just turn off "--exit-with-client"
+
+now that I have a timeout instead...
+
+ezpz
+
+* DONE reuse buffers instead of making a new one each time?
+CLOSED: [2025-02-22 Sat 09:56]
+this is the classic annoying buffer proliferation.
+
+let's...
+
+use generate-new-buffer...
+
+but how do we clean up stale buffers?
+
+I guess we just freely reuse.
+
+so we...
+
+I guess...
+
+increment the <2> number until we find one that's right?
+
+no wait...
+* TODO annoying sound on connection
+
+* DONE remove hardcoding of my homedir
+CLOSED: [2025-02-20 Thu 17:12]
+
+* TODO use a packaged xpra-html5
+blocked by the offscreen canvas thing
+https://github.com/Xpra-org/xpra-html5/issues/329
+
+nope can just pass offscreen=no
+
+so now we just need to package xpra-html5 lol
+
+let's just stick it in nix?
+
+yeah okay but I possibly need to do this myself
+
+and I can't just upstream it lol
+
+cuz we don't update nixpkgs fast enough argh!!
+
+but I can just copy and paste it into an overlay probs
+
+https://github.com/NixOS/nixpkgs/issues/384368
+* DONE use a proxy
+CLOSED: [2025-02-21 Fri 10:35]
+so there's a consistent port and we don't keep getting prompted for permissions
+
+this is probably fine.. the added latency is probably not too high...
+
+hm.
+but... how do I get the proxy itself to not start sessions?
+
+it seems to want to use the default config... annoying
+
+* DONE use nginx
+CLOSED: [2025-02-21 Fri 10:35]
+
+aww yeah.
+
+* DONE start up nginx with emacs
+CLOSED: [2025-02-22 Sat 09:30]
+I guess?
+
+that's nice and self-contained...
+
+and the access logs should be concise...
+
+so yeah let's do that.
+
+and automatically self-sign certs.
+
+** DONE generating config
+CLOSED: [2025-02-22 Sat 09:30]
+let's use an include I suppose?
+
+nope, prefix-relative works fine.
+
+nice!
+
+* DONE stick all logs in a single buffer?
+CLOSED: [2025-02-22 Sat 09:55]
+this would be nicer...
+
+let's also change the nginx log format to put timestamp first...
+
+nice perfect
+* DONE autostart nginx
+CLOSED: [2025-02-22 Sat 10:24]
+ya? I guess?
+
+just check if it's there, in xpra-start, and start it if not?
+* DONE customize default-settings.txt more nicely
+CLOSED: [2025-02-22 Sat 10:24]
+by intercepting it with nginx
+
+then we can package xpra-html5...
+* DONE configuring port number
+CLOSED: [2025-02-22 Sat 11:58]
+and ssl certs perhaps
+* TODO weird new-frame selection thingy
+it seems like maybe if a new frame is selected...
+
+our input goes there?? wrongly???
+
+and we can't escape???
+* DONE maybe just write out nginx.conf
+CLOSED: [2025-02-22 Sat 18:18]
+from elisp
+that seems fine.
+* permissions requests
+maybe these will pop up every time and be annoying.
+maybe this is a reason to use a consistent port...
