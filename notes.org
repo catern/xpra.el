@@ -432,7 +432,8 @@ no wait...
 * DONE remove hardcoding of my homedir
 CLOSED: [2025-02-20 Thu 17:12]
 
-* TODO use a packaged xpra-html5
+* DONE use a packaged xpra-html5
+CLOSED: [2025-02-23 Sun 13:41]
 blocked by the offscreen canvas thing
 https://github.com/Xpra-org/xpra-html5/issues/329
 
@@ -517,6 +518,9 @@ and we can't escape???
 CLOSED: [2025-02-22 Sat 18:18]
 from elisp
 that seems fine.
-* permissions requests
+* DONE permissions requests
+CLOSED: [2025-02-23 Sun 13:41]
 maybe these will pop up every time and be annoying.
 maybe this is a reason to use a consistent port...
+
+okay yeah proxied up

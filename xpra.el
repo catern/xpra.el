@@ -16,8 +16,12 @@
 (defgroup xpra nil "Xpra-based web frames."
   :group 'environment)
 
-(defcustom xpra-exe "/nix/store/ng20vsrvai62dsy87b41filsqs6j69z4-xpra-6.2.2/bin/xpra"
+(defcustom xpra-exe "/nix/store/krdplrwirm6j4p5iivrm32qxmzw7zhqi-xpra-6.2.3/bin/xpra"
   "The xpra executable."
+  :type '(string))
+
+(defcustom xpra-html "/nix/store/krdplrwirm6j4p5iivrm32qxmzw7zhqi-xpra-6.2.3/share/xpra/www"
+  "The xpra-html5 client."
   :type '(string))
 
 (defcustom xpra-additional-args
@@ -101,7 +105,6 @@ If nil, use self-signed certs."
     (let (ssl-key
 	  ssl-cert
 	  (config-file "nginx.conf")
-	  (xpra-html "/home/sbaugh/src/xpra-html5/html5")
 	  (settings-file "default-settings.txt"))
       (if (or xpra-ssl-key xpra-ssl-cert)
 	  (setq ssl-key xpra-ssl-key ssl-cert xpra-ssl-cert)
@@ -189,7 +192,7 @@ offscreen = no
 	   ,(format "--server-idle-timeout=%s" xpra-idle-timeout)
 	   "--exit-with-children" "--terminate-children=yes"
 	   "--start-child=emacsclient --frame-parameters='((fullscreen . fullboth))' --create-frame"
-	   "--html=/home/sbaugh/src/xpra-html5/html5")
+	   ,(format "--html=%s" xpra-html))
 	 :connection-type 'pipe
 	 :noquery t))
       (when interactive
