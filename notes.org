@@ -524,3 +524,22 @@ maybe these will pop up every time and be annoying.
 maybe this is a reason to use a consistent port...
 
 okay yeah proxied up
+* alternative URL design
+fixed emacs0 emacs1 emacs2 through emacs9 urls
+
+use socket activation to make them autostart the emacsclient when accessed
+* use cases
+- a frame you bookmark and use for normal work,
+  and which should be usable for multiple displays,
+  and all that
+- sharing a frame (uses a long random URL)
+- invoking a pop-up frame from the fe web UI or from other places,
+  to show a specific feature
+  
+this last one means we want to be able to specify arguments to emacsclient,
+and use a generated URL,
+etc
+
+but... we can defer all that, probably...
+
+yeah okay so then we don't even really need this to be managed by emacs.
