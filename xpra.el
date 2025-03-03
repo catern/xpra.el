@@ -1,13 +1,13 @@
 ;;; xpra.el --- Making frames through xpra           -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025  
+;; Copyright (C) 2025
 
 ;; Author: Spencer Baugh <sbaugh@catern.com>
 ;; Keywords: frames
 
 ;;; Commentary:
 
-;; 
+;;
 
 ;;; Code:
 (require 'comint)
@@ -126,6 +126,12 @@ daemon off;
 pid nginx.pid;
 events {}
 http {
+client_body_temp_path tmp;
+proxy_temp_path tmp;
+fastcgi_temp_path tmp;
+uwsgi_temp_path tmp;
+scgi_temp_path tmp;
+
   map $time_iso8601 $time_xpra { ~^([^T]+)T(\\d\\d:\\d\\d:\\d\\d) '$1 $2'; }
   map $msec $just_msec { ~\\d+.(\\d+)$ $1; }
   log_format xpra '$time_xpra,$just_msec [$remote_addr - $remote_user] \"$request\" $status $body_bytes_sent \"$http_referer\" \"$http_user_agent\"';
