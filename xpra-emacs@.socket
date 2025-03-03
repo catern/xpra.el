@@ -1,0 +1,8 @@
+[Unit]
+Description=Xpra emacsclient socket %i
+
+[Socket]
+ListenStream=%t/xpra/emacs-%i.socket
+
+[Install]
+WantedBy=sockets.target
