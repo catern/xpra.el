@@ -194,17 +194,11 @@ offscreen = no
 	     :command `(,xpra-nginx-exe "-e" "/dev/stderr" "-p" "." "-c" ,config-file)
 	     :connection-type 'pipe :noquery t)))))
 
-(defun xpra-start (&optional interactive public)
-  (interactive "pi")
+(defun xpra--start (sockname &optional interactive)
   (with-current-buffer (xpra--buffer)
-    (unless (process-live-p xpra--nginx-process)
-      (xpra--nginx-start))
-    (let* ((sockname
-	    ;; This format matches the forwarding regex for [^/]+-x[^/]+ in `xpra--nginx-start'.
-	    (if public
-		(format "public-x%s" (xpra--make-password))
-	      (format "emacs-x%s" (xpra--make-password))))
-	   (url (format "https://%s:10443/%s" xpra--fqdn sockname)))
+    ;; (unless (process-live-p xpra--nginx-process)
+    ;;   (xpra--nginx-start))
+    (let* ((url (format "https://%s:10443/%s" xpra--fqdn sockname)))
       (let ((process-environment
 	     (append '("XPRA_EXPORT_MENU_DATA=false"
 		       ;; Suppress the `server-create-dumb-terminal-frame' (buggy) behavior.
@@ -233,15 +227,21 @@ offscreen = no
 
 (defun xpra-start-public (&optional interactive)
   (interactive "p")
-  (xpra-start interactive t))
+  ;; This format matches the forwarding regex for [^/]+-x[^/]+ in `xpra--nginx-start'.
+  (xpra--start (format "public-x%s" (xpra--make-password)) interactive))
+
+(defun xpra-start-private (number)
+  (interactive "p")
+  (xpra--start (format "emacs-%s" number) number))
 
 (defun xpra-shutdown ()
   (interactive)
   (with-current-buffer (xpra--buffer)
     (while-let ((proc (get-buffer-process (current-buffer))))
+      (interrupt-process proc)
+      (sleep-for .1)
       (delete-process proc))
-    (erase-buffer)
-    (kill-buffer)))
+    (erase-buffer)))
 
 (provide 'xpra)
 ;;; xpra.el ends here

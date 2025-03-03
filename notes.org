@@ -316,6 +316,154 @@ minibuffer or echo area doesn't trigger it...
 okay this probably doesn't matter TOO much...
 
 but definitely a weird emacs bug...
+* auth
+hmm...
+I guess I need to use sqlite?
+
+and... centralize the auth in the proxy, and have it connect via unix sockets to other servers?
+
+sure that can work...
+
+and I guess...
+
+we make a unique user for each server??
+
+ah how about I just make my own custom UI,
+which...
+
+proxies to each individual display???
+
+or, just redirects to the xpra proxy, which can handle the authentication and proxying.
+
+so it's just some UI which is...
+
+- list xpra sessions
+- allow deleting them
+- allow copying their URLs
+
+but, this can just be an emacs UI! that's much better!
+
+so yeah we'll just do that!
+
+so we have a UI *in emacs* for doing this,
+and we display it in a frame...
+
+we have some... persistent server or something idk.
+
+anyway doing that UI in emacs is very appealing.
+
+and then anyway we can just have it yield URLs that you can follow,
+and those are URLs in the xpra proxy service...
+
+I mean, the true ideal is:
+- you open some URL, which authenticates you, and you maybe pass some parameters
+- that invokes emacsclient, and redirects to a URL specific to that emacsclient
+- that new URL can then be shared
+
+okay that's actually very reasonable and simple.
+then the frame management UI is just another instance of "open a URL and pass function=xpra-manage"
+
+yeah so also we would want...
+
+a way to basically do...
+
+pass arbitrary emacsclient arguments...
+
+for the invocation that will happen in the new X server
+
+so like:
+emacsclient -f xpra-emacsclient --some other --args
+
+and that invokes:
+emacsclient --some other --args
+in a fresh X server.
+
+and to you, just returns:
+https://some-url
+
+yeah so the thing we want is the proxy server,
+*purely* because we want a single port number,
+and dynamic forwarding to backends based on query parameter.
+
+hmm.
+
+yeah so maybe nginx can do a dynamic proxy-pass,
+to a different unix socket,
+based on the... query url thingy?
+
+the url path?
+
+yeah that seems preferable since then I don't have other xpra nonsense.
+I know it can't make new sessions or get in the way,
+which is great because I don't want it doing that.
+
+and also it's low-latency.
+
+yes yes good.
+
+and local unix domain sockets also process http, perfect.
+
+and we can make it just proxy to the unix socket in the user's homedir
+
+and we're good, great, excellent.
+
+oh and it can even be an arbitrary string!  because it's not the display number,
+it's the socket name.
+
+so e.g. could be
+
+https://whatever.com/FE
+
+as the url
+
+beautiful.
+
+and then we just have another way of creating these, which isn't through this.
+
+some "make-frame" endpoint.
+
+https://whatever.com/make-frame?name=FE&function=jane-fe-todo
+
+hmmmmmmmmmmmmmmm yes...
+
+we could also even do... like...
+
+https://whatever.com/FE?function=jane-fe-todo
+
+if the backend "FE" doesn't actually exist,
+redirect to make-frame with those arguments...
+
+and then redirect back...
+
+hm.
+
+oh! what about just having it be the function name?
+
+https://whatever.com/jane-fe-todo
+
+mmm...
+
+right um... making the URLs copy-pasteable will be a bit of a footgun...
+
+since it would really be, like...
+
+https://whatever.com/FE?password=asdfasdf&other_thing=whatever&foo=bar
+
+yeah that's fine though, this will be copy-pasteable and that's okay.
+
+heheheh we can probably rewrite the query parameters too...
+
+so it doesn't say "password".
+
+and also generally make things more concise!
+by removing query parameter noise...
+* DONE make shared and private URLs
+CLOSED: [2025-02-27 Thu 11:17]
+use HTTP basic auth for regular ones
+
+we...
+
+maybe don't need a -x scheme to id them then?
 * issues now
 well it's annoying that I can't run it directly in my own shell buffer lol,
 but whatever.
@@ -543,3 +691,117 @@ etc
 but... we can defer all that, probably...
 
 yeah okay so then we don't even really need this to be managed by emacs.
+* TODO support connecting to arbitrary emacs servers
+an interesting challenge.
+
+maybe we...
+
+hmm...
+
+we need a different xpra for each emacsclient,
+but they all connect to the same server...
+
+the really neat thing would be if...
+
+you could just directly connect to the emacs server, and it would protocol-upgrade to xpra.
+
+you couldn't then have a shared frame, but that's probably fine lol.
+
+anyway. it's fine for now.
+
+the protocol upgrade could be handled by a hook which gets called on each connection,
+which gets the first N bytes,
+and decides whether to take control or not.
+
+I guess it would need to... return nil if taking control,
+return the bytes already read if taking control.
+
+and each of them get passed the bytes already read.
+
+ah. so.
+
+if the emacs server is on a public TCP socket, then, it will expose frames.
+
+unauthenticated, lol.
+
+which is possibly bad...
+
+maybe the way the fallback should work is,
+we try to parse as emacsclient protocol,
+and if we fail on the first bytes we call a fallback function.
+
+and we can further generalize later iff necessary.
+
+eh this seems silly though.
+the emacs server protocol is for saying "hey emacs, connect to this X server and open a frame"
+the HTTP thing is totally different
+
+oh hey but we could support arbitrary emacs servers if we didn't bother supporting a shared frame...
+
+oh but I don't know how to start up new instances for each connection, ah.
+* DONE systemd instances
+wooo okay so this is working, autostarted and all.
+
+I do need to tweak the xpra build in nix, lol,
+to include libsystemd.
+* TODO what next
+okay so.
+
+how do I deploy this?
+
+right, I have to enable the units...
+
+which means symlinking to sockets.target.wantss?
+
+okay so the unit files...
+I plausibly...
+
+just... ship those statically?
+
+I don't have a particularly easy way to do that though.
+
+golly system configuration sure is hard haha lol!!!
+
+okay so ultimately I want this to be installed by Emacs automatically on startup,
+so we should do that for making the symlinks, of course.
+
+and then...
+the actual unit files...
+
+oh hey we can have a "xpra-emacs-frames.target"
+
+which includes all of the socket files yes yes
+
+or maybe not because that's tedious lol
+
+anyway we will just...
+
+write out the files on startup it's fine lol who cares
+
+oh we also need to make a unit file for nginx and write out its config.
+
+yeah yeah let's just do that it's fine lmao
+
+so it will write out a bunch of config...
+
+also the ssl certs, sure, whatever
+
+and it will maybe give users the chance to fetch the keytab they need
+
+I guess that will be in response to a command, sure.
+
+or... hmm...
+
+is it possible that we can request an HTTP principal...
+using the tickets available at the time emacs is running?
+then I wouldn't need a password...
+
+and then I could even just have emacs *start the units* when emacs starts.
+(or the server starts, rather)
+(and shut them down when emacs exits, maybe, if I want to be really silly)
+
+blargh
+
+I should talk to tilman about this!
+* C-z works poorly since it hides the frame
+we want to basically prevent that.
